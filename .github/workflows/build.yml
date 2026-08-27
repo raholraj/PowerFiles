@@ -24,24 +24,17 @@ jobs:
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/046mb3.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/bo21qm.zip"
           mkdir -p project
           unzip -o src.zip -d project
-          # Handle nested or flat
           if [ -f project/pubspec.yaml ]; then
             echo "Flat structure"
-            cd project
-          elif [ -d project/*/pubspec.yaml ] || ls project/*/pubspec.yaml 2>/dev/null; then
+          else
             DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
             echo "Nested: $DIR"
-            mv "$DIR"/* project/ 2>/dev/null || true
-            cd project
-          else
-            find project -type f | head -20
-            exit 1
+            cp -a "$DIR"/. project/
           fi
-          ls -la
-          pwd
+          ls -la project/
 
       - name: Get dependencies
         working-directory: project
