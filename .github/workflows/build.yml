@@ -18,7 +18,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.29.3'
           channel: 'stable'
           cache: true
 
@@ -28,11 +28,13 @@ jobs:
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
+          # Keep AGP 8.3.2 pinned in settings; force newDsl=false
           grep -q 'android.newDsl=false' project/android/gradle.properties || echo 'android.newDsl=false' >> project/android/gradle.properties
+          # Prevent Flutter from upgrading AGP in settings
+          sed -i 's/id("com.android.application") version ".*"/id("com.android.application") version "8.3.2"/' project/android/settings.gradle.kts || true
+          sed -i 's/id("org.jetbrains.kotlin.android") version ".*"/id("org.jetbrains.kotlin.android") version "1.9.23"/' project/android/settings.gradle.kts || true
           ls project/
-          echo "--- settings ---"
           cat project/android/settings.gradle.kts
-          echo "--- properties ---"
           cat project/android/gradle.properties
 
       - name: Get dependencies
