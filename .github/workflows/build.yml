@@ -12,14 +12,14 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.3'
-          channel: 'stable'
+          flutter-version: "3.29.3"
+          channel: stable
           cache: true
 
       - name: Download + prepare project
@@ -32,63 +32,40 @@ jobs:
             cp -a "$DIR"/. project/
           fi
           cd project
-
           mkdir -p /tmp/pf_backup
           cp -a lib /tmp/pf_backup/
           cp pubspec.yaml /tmp/pf_backup/
-          cp -a android/app/src/main/kotlin /tmp/pf_backup/kotlin 2>/dev/null || true
-          cp android/app/src/main/AndroidManifest.xml /tmp/pf_backup/AndroidManifest.xml 2>/dev/null || true
-          cp -a android/app/src/main/res /tmp/pf_backup/res 2>/dev/null || true
-
+          cp -a android/app/src/main/kotlin /tmp/pf_backup/kotlin || true
+          cp android/app/src/main/AndroidManifest.xml /tmp/pf_backup/AndroidManifest.xml || true
+          cp -a android/app/src/main/res /tmp/pf_backup/res || true
           rm -rf android ios web linux macos windows
           flutter create . --project-name powerfiles --org com.powerfiles --platforms=android
-
-          rm -rf lib && cp -a /tmp/pf_backup/lib . && cp /tmp/pf_backup/pubspec.yaml .
+          rm -rf lib
+          cp -a /tmp/pf_backup/lib .
+          cp /tmp/pf_backup/pubspec.yaml .
           mkdir -p android/app/src/main/kotlin
-          [ -d /tmp/pf_backup/kotlin ] && cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/
-          [ -d /tmp/pf_backup/res ] && cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
-          [ -f /tmp/pf_backup/AndroidManifest.xml ] && cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-
+          cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/ || true
+          cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
+          cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml || true
           sed -i 's/large\.take(n)\.asMap()/large.take(n).toList().asMap()/g' lib/features/telegram_bot/telegram_settings_screen.dart
-
           BG=android/app/build.gradle.kts
-          [ -f android/app/build.gradle ] && BG=android/app/build.gradle
-
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' "$BG" || true
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdk = 26/' "$BG" || true
-          sed -i 's/minSdk = [0-9]*/minSdk = 26/' "$BG" || true
-          if grep -q 'ndkVersion' "$BG"; then
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' "$BG"
+          sed -i 's/minSdk = [0-9]*/minSdk = 26/' "$BG"
+          if grep -q ndkVersion "$BG"; then
             sed -i 's/ndkVersion = ".*"/ndkVersion = "27.0.12077973"/' "$BG"
           else
             sed -i '/compileSdk/a\    ndkVersion = "27.0.12077973"' "$BG"
           fi
-
-          # Inject AndroidX deps needed by custom Kotlin channels
-          if ! grep -q 'documentfile' "$BG"; then
-            cat >> "$BG" << 'DEPS'
-
-dependencies {
-    implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.multidex:multidex:2.0.1")
-    implementation("androidx.lifecycle:lifecycle-process:2.8.4")
-}
-DEPS
+          if ! grep -q documentfile "$BG"; then
+            printf '\ndependencies {\n    implementation("androidx.documentfile:documentfile:1.0.1")\n    implementation("androidx.work:work-runtime-ktx:2.9.1")\n    implementation("androidx.core:core-ktx:1.13.1")\n    implementation("androidx.appcompat:appcompat:1.7.0")\n    implementation("androidx.multidex:multidex:2.0.1")\n}\n' >> "$BG"
           fi
-
-          # Ensure SAFChannel has DocumentFile import
           SAF=android/app/src/main/kotlin/com/powerfiles/channels/SAFChannel.kt
-          if [ -f "$SAF" ] && ! grep -q 'androidx.documentfile' "$SAF"; then
+          if [ -f "$SAF" ] && ! grep -q androidx.documentfile "$SAF"; then
             sed -i '1a import androidx.documentfile.provider.DocumentFile' "$SAF"
           fi
-
-          grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
-          grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
-
-          echo "=== build file tail ==="
-          tail -40 "$BG"
+          echo 'android.newDsl=false' >> android/gradle.properties
+          echo 'android.builtInKotlin=false' >> android/gradle.properties
+          tail -30 "$BG"
 
       - name: Get dependencies
         working-directory: project
