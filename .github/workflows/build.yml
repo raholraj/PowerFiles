@@ -18,7 +18,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.4'
+          flutter-version: '3.47.1'
           channel: 'stable'
           cache: true
 
@@ -35,7 +35,7 @@ jobs:
             cp -a "$DIR"/. project/
           fi
           ls -la project/
-          cat project/pubspec.yaml | tail -15
+          cat project/pubspec.yaml | tail -20
 
       - name: Get dependencies
         working-directory: project
