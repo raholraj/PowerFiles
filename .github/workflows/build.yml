@@ -9,8 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -24,14 +22,42 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Download source zip
+        run: |
+          curl -L -o src.zip "https://litter.catbox.moe/046mb3.zip"
+          mkdir -p project
+          unzip -o src.zip -d project
+          # Handle nested or flat
+          if [ -f project/pubspec.yaml ]; then
+            echo "Flat structure"
+            cd project
+          elif [ -d project/*/pubspec.yaml ] || ls project/*/pubspec.yaml 2>/dev/null; then
+            DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
+            echo "Nested: $DIR"
+            mv "$DIR"/* project/ 2>/dev/null || true
+            cd project
+          else
+            find project -type f | head -20
+            exit 1
+          fi
+          ls -la
+          pwd
+
       - name: Get dependencies
+        working-directory: project
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
+        working-directory: project
+        run: |
+          flutter build apk --release || flutter build apk --release --no-tree-shake-icons
+          find build -name "*.apk" -type f
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: powerfiles-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: powerfiles-apk-ondevice-v4
+          path: |
+            project/build/app/outputs/flutter-apk/*.apk
+            project/build/app/outputs/**/*.apk
+          if-no-files-found: warn
