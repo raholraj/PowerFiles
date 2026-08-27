@@ -24,13 +24,14 @@ jobs:
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/nenjuf.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/9kvaor.zip"
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
           grep -q 'android.newDsl=false' project/android/gradle.properties || echo 'android.newDsl=false' >> project/android/gradle.properties
-          cat project/android/app/build.gradle.kts | head -20
-          ls project/
+          ls project/android/
+          cat project/android/settings.gradle
+          cat project/android/gradle.properties
 
       - name: Get dependencies
         working-directory: project
