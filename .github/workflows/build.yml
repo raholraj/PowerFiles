@@ -18,37 +18,27 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.1'
+          flutter-version: '3.32.0'
           channel: 'stable'
           cache: true
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/udtuqu.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/f4x92w.zip"
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
+          # Force AGP 8.7.2 for Flutter 3.32
+          sed -i 's/version "9.1.0"/version "8.7.2"/' project/android/settings.gradle.kts 2>/dev/null || true
+          sed -i 's/version "8.7.2"/version "8.7.2"/' project/android/settings.gradle.kts 2>/dev/null || true
+          grep -q 'android.newDsl=false' project/android/gradle.properties || echo 'android.newDsl=false' >> project/android/gradle.properties
+          grep -q 'android.builtInKotlin=false' project/android/gradle.properties || echo 'android.builtInKotlin=false' >> project/android/gradle.properties
           ls project/
-
-      - name: Force AGP flags (survive Flutter rewrite)
-        working-directory: project
-        run: |
-          grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
-          grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
-          cat android/gradle.properties
-          echo '--- settings ---'
-          cat android/settings.gradle.kts
+          cat project/android/settings.gradle.kts
 
       - name: Get dependencies
         working-directory: project
         run: flutter pub get
-
-      - name: Re-apply AGP flags after pub get
-        working-directory: project
-        run: |
-          grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
-          grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
-          cat android/gradle.properties
 
       - name: Build APK
         working-directory: project
