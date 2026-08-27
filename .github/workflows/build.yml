@@ -49,34 +49,37 @@ jobs:
           cp /tmp/pf_backup/pubspec.yaml .
 
           mkdir -p android/app/src/main/kotlin
-          if [ -d /tmp/pf_backup/kotlin ]; then
-            cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/
-          fi
-          if [ -d /tmp/pf_backup/res ]; then
-            cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
-          fi
-          if [ -f /tmp/pf_backup/AndroidManifest.xml ]; then
-            cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          fi
+          [ -d /tmp/pf_backup/kotlin ] && cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/
+          [ -d /tmp/pf_backup/res ] && cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
+          [ -f /tmp/pf_backup/AndroidManifest.xml ] && cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
-          # Fix Dart: Iterable has no asMap — need toList()
+          # Fix Dart asMap on Iterable
           sed -i 's/large\.take(n)\.asMap()/large.take(n).toList().asMap()/g' lib/features/telegram_bot/telegram_settings_screen.dart
 
-          # NDK 27 for plugins
-          if [ -f android/app/build.gradle.kts ]; then
-            grep -q 'ndkVersion' android/app/build.gradle.kts || sed -i '/compileSdk/a\    ndkVersion = "27.0.12077973"' android/app/build.gradle.kts
-            sed -i 's/ndkVersion = ".*"/ndkVersion = "27.0.12077973"/' android/app/build.gradle.kts || true
-          fi
-          if [ -f android/app/build.gradle ]; then
-            grep -q 'ndkVersion' android/app/build.gradle || sed -i '/compileSdk/a\    ndkVersion "27.0.12077973"' android/app/build.gradle
-            sed -i 's/ndkVersion ".*"/ndkVersion "27.0.12077973"/' android/app/build.gradle || true
+          # Patch Gradle (kts or groovy) for minSdk + NDK
+          BG=""
+          [ -f android/app/build.gradle.kts ] && BG=android/app/build.gradle.kts
+          [ -f android/app/build.gradle ] && BG=android/app/build.gradle
+          echo "Patching $BG"
+          # minSdk
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' "$BG" || true
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdk 26/' "$BG" || true
+          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 26/' "$BG" || true
+          sed -i 's/minSdk = [0-9]*/minSdk = 26/' "$BG" || true
+          # ndkVersion
+          if grep -q 'ndkVersion' "$BG"; then
+            sed -i 's/ndkVersion = ".*"/ndkVersion = "27.0.12077973"/' "$BG" || true
+            sed -i 's/ndkVersion ".*"/ndkVersion "27.0.12077973"/' "$BG" || true
+          else
+            # insert after compileSdk line
+            sed -i '/compileSdk/a\    ndkVersion = "27.0.12077973"' "$BG" || true
           fi
 
           grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
           grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
 
-          echo "--- app build.gradle ---"
-          cat android/app/build.gradle.kts 2>/dev/null || cat android/app/build.gradle
+          echo "=== patched build file ==="
+          cat "$BG"
 
       - name: Get dependencies
         working-directory: project
