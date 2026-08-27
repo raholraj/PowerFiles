@@ -24,15 +24,35 @@ jobs:
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/c5pdet.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/f4x92w.zip"
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
           ls project/
 
+      - name: Force AGP 8.7.2 + DSL flags (survive Flutter upgrade)
+        working-directory: project
+        run: |
+          # Ensure AGP pin in settings
+          sed -i 's/id("com.android.application") version ".*"/id("com.android.application") version "8.7.2"/' android/settings.gradle.kts || true
+          # Force properties that Flutter may overwrite
+          grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
+          grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
+          cat android/settings.gradle.kts
+          echo '---'
+          cat android/gradle.properties
+
       - name: Get dependencies
         working-directory: project
         run: flutter pub get
+
+      - name: Re-apply AGP flags after pub get (Flutter may rewrite gradle.properties)
+        working-directory: project
+        run: |
+          grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
+          grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
+          sed -i 's/id("com.android.application") version ".*"/id("com.android.application") version "8.7.2"/' android/settings.gradle.kts || true
+          cat android/gradle.properties
 
       - name: Build APK
         working-directory: project
