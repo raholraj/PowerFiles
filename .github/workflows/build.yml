@@ -24,18 +24,13 @@ jobs:
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/p93tys.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/nenjuf.zip"
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
-          # Keep AGP 8.3.2 pinned in settings; force newDsl=false
           grep -q 'android.newDsl=false' project/android/gradle.properties || echo 'android.newDsl=false' >> project/android/gradle.properties
-          # Prevent Flutter from upgrading AGP in settings
-          sed -i 's/id("com.android.application") version ".*"/id("com.android.application") version "8.3.2"/' project/android/settings.gradle.kts || true
-          sed -i 's/id("org.jetbrains.kotlin.android") version ".*"/id("org.jetbrains.kotlin.android") version "1.9.23"/' project/android/settings.gradle.kts || true
+          cat project/android/app/build.gradle.kts | head -20
           ls project/
-          cat project/android/settings.gradle.kts
-          cat project/android/gradle.properties
 
       - name: Get dependencies
         working-directory: project
