@@ -24,7 +24,7 @@ jobs:
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/2ma79q.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/y2d661.zip"
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then
@@ -35,7 +35,6 @@ jobs:
             cp -a "$DIR"/. project/
           fi
           ls -la project/
-          cat project/pubspec.yaml | tail -20
 
       - name: Get dependencies
         working-directory: project
@@ -44,14 +43,12 @@ jobs:
       - name: Build APK
         working-directory: project
         run: |
-          flutter build apk --release || flutter build apk --release --no-tree-shake-icons
+          flutter build apk --release
           find build -name "*.apk" -type f || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: powerfiles-apk-ondevice-v4
-          path: |
-            project/build/app/outputs/flutter-apk/*.apk
-            project/build/app/outputs/**/*.apk
+          path: project/build/app/outputs/flutter-apk/*.apk
           if-no-files-found: warn
