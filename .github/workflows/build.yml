@@ -18,23 +18,22 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.0'
+          flutter-version: '3.24.5'
           channel: 'stable'
           cache: true
 
       - name: Download source zip
         run: |
-          curl -L -o src.zip "https://litter.catbox.moe/f4x92w.zip"
+          curl -L -o src.zip "https://litter.catbox.moe/p93tys.zip"
           mkdir -p project
           unzip -o src.zip -d project
           if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
-          # Force AGP 8.7.2 for Flutter 3.32
-          sed -i 's/version "9.1.0"/version "8.7.2"/' project/android/settings.gradle.kts 2>/dev/null || true
-          sed -i 's/version "8.7.2"/version "8.7.2"/' project/android/settings.gradle.kts 2>/dev/null || true
           grep -q 'android.newDsl=false' project/android/gradle.properties || echo 'android.newDsl=false' >> project/android/gradle.properties
-          grep -q 'android.builtInKotlin=false' project/android/gradle.properties || echo 'android.builtInKotlin=false' >> project/android/gradle.properties
           ls project/
+          echo "--- settings ---"
           cat project/android/settings.gradle.kts
+          echo "--- properties ---"
+          cat project/android/gradle.properties
 
       - name: Get dependencies
         working-directory: project
@@ -49,6 +48,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: powerfiles-apk-ondevice-v4
+          name: powerfiles-apk-v5
           path: project/build/app/outputs/flutter-apk/*.apk
           if-no-files-found: warn
