@@ -22,16 +22,60 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Download source zip
+      - name: Download + prepare project
         run: |
+          set -e
           curl -L -o src.zip "https://litter.catbox.moe/9kvaor.zip"
           mkdir -p project
           unzip -o src.zip -d project
-          if [ -f project/pubspec.yaml ]; then echo Flat; else DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1); cp -a "$DIR"/. project/; fi
-          grep -q 'android.newDsl=false' project/android/gradle.properties || echo 'android.newDsl=false' >> project/android/gradle.properties
-          ls project/android/
-          cat project/android/settings.gradle
-          cat project/android/gradle.properties
+          if [ ! -f project/pubspec.yaml ]; then
+            DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
+            cp -a "$DIR"/. project/
+          fi
+          cd project
+
+          # Backup custom native + manifest + lib
+          mkdir -p /tmp/pf_backup
+          cp -a lib /tmp/pf_backup/
+          cp pubspec.yaml /tmp/pf_backup/
+          cp -a android/app/src/main/kotlin /tmp/pf_backup/kotlin 2>/dev/null || true
+          cp android/app/src/main/AndroidManifest.xml /tmp/pf_backup/AndroidManifest.xml 2>/dev/null || true
+          cp -a android/app/src/main/res /tmp/pf_backup/res 2>/dev/null || true
+
+          # Wipe broken android/ and regenerate for this Flutter version
+          rm -rf android ios web linux macos windows
+          flutter create . --project-name powerfiles --org com.powerfiles --platforms=android
+
+          # Restore Dart + pubspec
+          rm -rf lib
+          cp -a /tmp/pf_backup/lib .
+          cp /tmp/pf_backup/pubspec.yaml .
+
+          # Restore Kotlin sources into regenerated tree
+          mkdir -p android/app/src/main/kotlin
+          if [ -d /tmp/pf_backup/kotlin ]; then
+            cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/
+          fi
+
+          # Restore icons/res if present
+          if [ -d /tmp/pf_backup/res ]; then
+            cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
+          fi
+
+          # Merge custom manifest pieces (permissions + package) onto generated one
+          if [ -f /tmp/pf_backup/AndroidManifest.xml ]; then
+            cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          fi
+
+          # Force newDsl=false
+          grep -q 'android.newDsl=false' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
+          grep -q 'android.builtInKotlin=false' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
+
+          # Ensure MainActivity package path matches
+          find android -name 'MainActivity.*' -o -name 'StorageChannel.kt' | head -20
+          ls -la android/app/src/main/kotlin/com/powerfiles/ || true
+          cat android/settings.gradle* || true
+          cat android/gradle.properties
 
       - name: Get dependencies
         working-directory: project
