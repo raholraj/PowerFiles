@@ -25,46 +25,61 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Reconstruct source zip + prepare project
+      - name: Prepare android platform + restore custom code
         run: |
           set -e
-          cat src/v6s_00 src/v6s_01 src/v6s_02 src/v6s_03 src/v6s_04 src/v6s_05 src/v6s_06 src/v6s_07 | base64 -d > src.zip
-          mkdir -p project && unzip -o src.zip -d project
-          if [ ! -f project/pubspec.yaml ]; then
-            DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
-            cp -a "$DIR"/. project/
-          fi
-          cd project
+          # Backup custom sources
           mkdir -p /tmp/pf_backup
           cp -a lib /tmp/pf_backup/
           cp pubspec.yaml /tmp/pf_backup/
-          cp -a android/app/src/main/kotlin /tmp/pf_backup/kotlin || true
-          cp android/app/src/main/AndroidManifest.xml /tmp/pf_backup/AndroidManifest.xml || true
-          cp -a android/app/src/main/res /tmp/pf_backup/res || true
-          cp android/app/debug.keystore /tmp/pf_backup/debug.keystore 2>/dev/null || true
-          cp android/app/build.gradle.kts /tmp/pf_backup/app_build.gradle.kts 2>/dev/null || true
+          if [ -d android/app/src/main/kotlin ]; then
+            cp -a android/app/src/main/kotlin /tmp/pf_backup/kotlin
+          fi
+          if [ -f android/app/src/main/AndroidManifest.xml ]; then
+            cp android/app/src/main/AndroidManifest.xml /tmp/pf_backup/AndroidManifest.xml
+          fi
+          if [ -d android/app/src/main/res ]; then
+            cp -a android/app/src/main/res /tmp/pf_backup/res
+          fi
+          if [ -f android/app/build.gradle.kts ]; then
+            cp android/app/build.gradle.kts /tmp/pf_backup/app_build.gradle.kts
+          fi
+          # Regenerate android platform for correct AGP/Flutter plugin wiring
           rm -rf android ios web linux macos windows
           flutter create . --project-name powerfiles --org com.powerfiles --platforms=android
+          # Restore custom code
           rm -rf lib
           cp -a /tmp/pf_backup/lib .
           cp /tmp/pf_backup/pubspec.yaml .
           mkdir -p android/app/src/main/kotlin
-          cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/ || true
-          cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
-          cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml || true
-          if [ -f /tmp/pf_backup/debug.keystore ]; then
-            cp /tmp/pf_backup/debug.keystore android/app/debug.keystore
-          else
-            keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
+          if [ -d /tmp/pf_backup/kotlin ]; then
+            cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/
+          fi
+          if [ -d /tmp/pf_backup/res ]; then
+            cp -a /tmp/pf_backup/res/. android/app/src/main/res/
+          fi
+          if [ -f /tmp/pf_backup/AndroidManifest.xml ]; then
+            cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           fi
           if [ -f /tmp/pf_backup/app_build.gradle.kts ]; then
             cp /tmp/pf_backup/app_build.gradle.kts android/app/build.gradle.kts
+          fi
+          # Fixed debug keystore (same signature every CI run)
+          keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt 2>/dev/null || true
+          # Ensure signingConfig points to it
+          BG=android/app/build.gradle.kts
+          if ! grep -q 'storeFile = file("debug.keystore")' "$BG"; then
+            # inject basic signing if missing
+            sed -i '/defaultConfig {/a\    signingConfigs {\n        getByName("debug") {\n            storeFile = file("debug.keystore")\n            storePassword = "android"\n            keyAlias = "androiddebugkey"\n            keyPassword = "android"\n        }\n    }' "$BG" || true
+          fi
+          # Force release to use debug signing (install-compatible)
+          if ! grep -q 'signingConfig = signingConfigs.getByName("debug")' "$BG"; then
+            sed -i '/release {/a\            signingConfig = signingConfigs.getByName("debug")' "$BG" || true
           fi
           sed -i 's/large\.take(n)\.asMap()/large.take(n).toList().asMap()/g' lib/features/telegram_bot/telegram_settings_screen.dart || true
           if ! grep -q dependency_overrides pubspec.yaml; then
             printf '\ndependency_overrides:\n  path: ^1.9.1\n  permission_handler: ^12.0.0\n' >> pubspec.yaml
           fi
-          BG=android/app/build.gradle.kts
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' "$BG" || true
           sed -i 's/minSdk = [0-9]*/minSdk = 26/' "$BG" || true
           if grep -q ndkVersion "$BG"; then
@@ -81,14 +96,13 @@ jobs:
           fi
           echo 'android.newDsl=false' >> android/gradle.properties
           echo 'android.builtInKotlin=false' >> android/gradle.properties
-          tail -40 "$BG"
+          echo '--- build.gradle.kts ---'
+          cat "$BG"
 
       - name: Get dependencies
-        working-directory: project
         run: flutter pub get
 
       - name: Build APK
-        working-directory: project
         run: |
           flutter build apk --release
           find build -name "*.apk" -type f || true
@@ -97,5 +111,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: powerfiles-apk-v6
-          path: project/build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: warn
