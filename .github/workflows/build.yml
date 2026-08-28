@@ -25,13 +25,23 @@ jobs:
       - name: Download + prepare project
         run: |
           set -e
-          curl -L -o src.zip "https://filebin.net/bdcjsrgq4aezhni9/powerfiles_v7.zip"
+          curl -L -o src_raw.zip "https://filebin.net/bdcjsrgq4aezhni9/powerfiles_v7.zip"
+          # Filebin sometimes prepends extra bytes; find PK zip magic and strip
+          python3 -c "
+          data=open('src_raw.zip','rb').read()
+          i=data.find(b'PK\\x03\\x04')
+          if i<0: i=data.find(b'PK')
+          open('src.zip','wb').write(data[i:] if i>=0 else data)
+          print('stripped', i, 'bytes, size', len(data)-max(i,0))
+          "
           ls -la src.zip
-          mkdir -p project && unzip -o src.zip -d project
+          mkdir -p project
+          unzip -o src.zip -d project || true
           if [ ! -f project/pubspec.yaml ]; then
             DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
             cp -a "$DIR"/. project/
           fi
+          test -f project/pubspec.yaml
           cd project
           mkdir -p /tmp/pf_backup
           cp -a lib /tmp/pf_backup/
@@ -73,21 +83,18 @@ jobs:
           if ! grep -q documentfile "$BG"; then
             printf '\ndependencies {\n    implementation("androidx.documentfile:documentfile:1.0.1")\n    implementation("androidx.work:work-runtime-ktx:2.9.1")\n    implementation("androidx.core:core-ktx:1.13.1")\n    implementation("androidx.appcompat:appcompat:1.7.0")\n    implementation("androidx.multidex:multidex:2.0.1")\n}\n' >> "$BG"
           fi
-          if ! grep -q 'storeFile = file("debug.keystore")' "$BG"; then
-            sed -i '/defaultConfig {/a\    signingConfigs {\n        getByName("debug") {\n            storeFile = file("debug.keystore")\n            storePassword = "android"\n            keyAlias = "androiddebugkey"\n            keyPassword = "android"\n        }\n    }' "$BG" || true
-          fi
-          if ! grep -q 'signingConfig = signingConfigs.getByName("debug")' "$BG"; then
-            sed -i '/release {/a\            signingConfig = signingConfigs.getByName("debug")' "$BG" || true
-          fi
-          SAF=android/app/src/main/kotlin/com/powerfiles/channels/SAFChannel.kt
-          if [ -f "$SAF" ] && ! grep -q androidx.documentfile "$SAF"; then
-            sed -i '1a import androidx.documentfile.provider.DocumentFile' "$SAF"
-          fi
+          SAF=android/app/src/main/kotlin/com.powerfiles/channels/SAFChannel.kt
+          SAF2=android/app/src/main/kotlin/com/powerfiles/channels/SAFChannel.kt
+          for S in "$SAF" "$SAF2"; do
+            if [ -f "$S" ] && ! grep -q androidx.documentfile "$S"; then
+              sed -i '1a import androidx.documentfile.provider.DocumentFile' "$S"
+            fi
+          done
           echo 'android.newDsl=false' >> android/gradle.properties
           echo 'android.builtInKotlin=false' >> android/gradle.properties
           echo '--- READY ---'
           ls -la android/app/debug.keystore lib/main.dart
-          tail -25 "$BG"
+          tail -20 "$BG"
 
       - name: Get dependencies
         working-directory: project
