@@ -25,40 +25,22 @@ jobs:
       - name: Download + prepare project
         run: |
           set -e
-          curl -L -o src_raw.zip "https://filebin.net/bdcjsrgq4aezhni9/powerfiles_v7.zip" || true
-          python3 -c "
-          data=open('src_raw.zip','rb').read()
-          i=data.find(b'PK\\x03\\x04')
-          if i<0: i=data.find(b'PK')
-          open('src.zip','wb').write(data[i:] if i>=0 else data)
-          print('zip ok', len(data))
-          "
-          mkdir -p project
-          unzip -o src.zip -d project || true
+          curl -L -o src.zip "https://litter.catbox.moe/qdi0ku.zip"
+          mkdir -p project && unzip -o src.zip -d project
           if [ ! -f project/pubspec.yaml ]; then
             DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
-            cp -a "$DIR"/. project/ || true
+            cp -a "$DIR"/. project/
           fi
-          test -f project/pubspec.yaml
           cd project
-
-          sed -i 's/permission_handler: \^[0-9.]*/permission_handler: ^12.0.0/' pubspec.yaml
-          if ! grep -q dependency_overrides pubspec.yaml; then
-            printf '\ndependency_overrides:\n  path: ^1.9.1\n  permission_handler: ^12.0.0\n' >> pubspec.yaml
-          fi
-
           mkdir -p /tmp/pf_backup
           cp -a lib /tmp/pf_backup/
           cp pubspec.yaml /tmp/pf_backup/
           cp -a android/app/src/main/kotlin /tmp/pf_backup/kotlin || true
           cp android/app/src/main/AndroidManifest.xml /tmp/pf_backup/AndroidManifest.xml || true
           cp -a android/app/src/main/res /tmp/pf_backup/res || true
-          cp android/app/debug.keystore /tmp/pf_backup/debug.keystore 2>/dev/null || true
-          cp android/app/build.gradle.kts /tmp/pf_backup/app_build.gradle.kts 2>/dev/null || true
-
+          cp android/app/build.gradle.kts /tmp/pf_backup/app_bg.kts 2>/dev/null || true
           rm -rf android ios web linux macos windows
           flutter create . --project-name powerfiles --org com.powerfiles --platforms=android --no-pub
-
           rm -rf lib
           cp -a /tmp/pf_backup/lib .
           cp /tmp/pf_backup/pubspec.yaml .
@@ -66,73 +48,26 @@ jobs:
           cp -a /tmp/pf_backup/kotlin/. android/app/src/main/kotlin/ || true
           cp -a /tmp/pf_backup/res/. android/app/src/main/res/ || true
           cp /tmp/pf_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml || true
-
-          if [ -f /tmp/pf_backup/debug.keystore ]; then
-            cp /tmp/pf_backup/debug.keystore android/app/debug.keystore
-          else
-            keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt
+          if [ -f /tmp/pf_backup/app_bg.kts ]; then
+            cp /tmp/pf_backup/app_bg.kts android/app/build.gradle.kts
           fi
-          if [ -f /tmp/pf_backup/app_build.gradle.kts ]; then
-            cp /tmp/pf_backup/app_build.gradle.kts android/app/build.gradle.kts
-          fi
-
-          # Dart asMap fix
+          keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -noprompt 2>/dev/null || true
           find lib -name "*.dart" -exec sed -i 's/\.take(\([^)]*\))\.asMap()/.take(\1).toList().asMap()/g' {} \; || true
-
-          # Kotlin toList fix
           SC=android/app/src/main/kotlin/com/powerfiles/channels/StorageChannel.kt
           if [ -f "$SC" ]; then
-            python3 -c "
-p='$SC'
-t=open(p).read()
-if '.toList()' not in t[t.find('findLargeFiles'):t.find('findLargeFiles')+600]:
-    t=t.replace(
-'''            .map { file ->
-                mapOf(
-                    \"name\" to file.name,
-                    \"path\" to file.absolutePath,
-                    \"size\" to file.length(),
-                    \"lastModified\" to file.lastModified(),
-                    \"extension\" to file.extension
-                )
-            }
-    }''',
-'''            .map { file ->
-                mapOf(
-                    \"name\" to file.name,
-                    \"path\" to file.absolutePath,
-                    \"size\" to file.length(),
-                    \"lastModified\" to file.lastModified(),
-                    \"extension\" to file.extension
-                )
-            }
-            .toList()
-    }''')
-open(p,'w').write(t)
-print('StorageChannel ok')
-"
+            if ! grep -q "\.toList()" "$SC"; then
+              sed -i '/"extension" to file.extension/a\            }.toList()' "$SC" || true
+            fi
           fi
-
-          # Remove empty ScanService class
           SS=android/app/src/main/kotlin/com/powerfiles/services/ScanService.kt
           if [ -f "$SS" ]; then
             sed -i '/^class ScanService$/d' "$SS" || true
           fi
-
-          # Remove ScanService from manifest
           MF=android/app/src/main/AndroidManifest.xml
           if [ -f "$MF" ]; then
-            python3 -c '
-import re
-p="android/app/src/main/AndroidManifest.xml"
-t=open(p).read()
-t=re.sub(r"\s*<!--[^>]*[Ss]ervice[^>]*-->\s*<service[\s\S]*?ScanService[\s\S]*?/>\s*", "\n", t)
-t=re.sub(r"\s*<service[\s\S]*?ScanService[\s\S]*?/>\s*", "\n", t)
-open(p,"w").write(t)
-print("manifest cleaned")
-'
+            sed -i '/ScanService/,+3d' "$MF" || true
+            sed -i '/android:name="\.services\.ScanService"/,+2d' "$MF" || true
           fi
-
           BG=android/app/build.gradle.kts
           sed -i 's/compileSdk = [0-9]*/compileSdk = 35/' "$BG" || true
           sed -i 's/targetSdk = [0-9]*/targetSdk = 35/' "$BG" || true
@@ -146,7 +81,7 @@ print("manifest cleaned")
           if ! grep -q documentfile "$BG"; then
             printf '\ndependencies {\n    implementation("androidx.documentfile:documentfile:1.0.1")\n    implementation("androidx.work:work-runtime-ktx:2.9.1")\n    implementation("androidx.core:core-ktx:1.13.1")\n    implementation("androidx.appcompat:appcompat:1.7.0")\n    implementation("androidx.multidex:multidex:2.0.1")\n}\n' >> "$BG"
           fi
-          if ! grep -q "checkReleaseBuilds" "$BG"; then
+          if ! grep -q checkReleaseBuilds "$BG"; then
             sed -i '/android {/a\    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }' "$BG" || true
           fi
           SAF=android/app/src/main/kotlin/com/powerfiles/channels/SAFChannel.kt
@@ -157,7 +92,7 @@ print("manifest cleaned")
           echo 'android.builtInKotlin=false' >> android/gradle.properties
           echo '--- READY ---'
           grep -n compileSdk "$BG" || true
-          grep -n toList "$SC" || true
+          grep -c toList "$SC" || true
           grep -n ScanService "$MF" || echo "no ScanService in manifest"
 
       - name: Get dependencies
@@ -173,6 +108,6 @@ print("manifest cleaned")
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: powerfiles-apk-v7
+          name: powerfiles-apk-v8
           path: project/build/app/outputs/flutter-apk/*.apk
           if-no-files-found: warn
