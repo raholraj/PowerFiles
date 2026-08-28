@@ -28,7 +28,7 @@ jobs:
       - name: Reconstruct source zip + prepare project
         run: |
           set -e
-          cat src/v6part_00 src/v6part_01 src/v6part_02 | base64 -d > src.zip
+          cat src/v6s_00 src/v6s_01 src/v6s_02 src/v6s_03 src/v6s_04 src/v6s_05 src/v6s_06 src/v6s_07 | base64 -d > src.zip
           mkdir -p project && unzip -o src.zip -d project
           if [ ! -f project/pubspec.yaml ]; then
             DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
@@ -81,10 +81,7 @@ jobs:
           fi
           echo 'android.newDsl=false' >> android/gradle.properties
           echo 'android.builtInKotlin=false' >> android/gradle.properties
-          echo '--- app/build.gradle.kts tail ---'
           tail -40 "$BG"
-          echo '--- pubspec tail ---'
-          tail -15 pubspec.yaml
 
       - name: Get dependencies
         working-directory: project
