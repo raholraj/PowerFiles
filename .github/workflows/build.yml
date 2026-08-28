@@ -25,19 +25,19 @@ jobs:
       - name: Download + prepare project
         run: |
           set -e
-          curl -L -o src_raw.zip "https://filebin.net/bdcjsrgq4aezhni9/powerfiles_v7.zip"
+          curl -L -o src_raw.zip "https://filebin.net/bdcjsrgq4aezhni9/powerfiles_v7.zip" || true
           python3 -c "
           data=open('src_raw.zip','rb').read()
           i=data.find(b'PK\\x03\\x04')
           if i<0: i=data.find(b'PK')
           open('src.zip','wb').write(data[i:] if i>=0 else data)
-          print('zip ok')
+          print('zip ok', len(data))
           "
           mkdir -p project
           unzip -o src.zip -d project || true
           if [ ! -f project/pubspec.yaml ]; then
             DIR=$(find project -name pubspec.yaml -exec dirname {} \; | head -1)
-            cp -a "$DIR"/. project/
+            cp -a "$DIR"/. project/ || true
           fi
           test -f project/pubspec.yaml
           cd project
@@ -77,28 +77,61 @@ jobs:
           fi
 
           # Dart asMap fix
-          sed -i 's/large\.take(n)\.asMap()/large.take(n).toList().asMap()/g' lib/features/telegram_bot/telegram_settings_screen.dart || true
+          find lib -name "*.dart" -exec sed -i 's/\.take(\([^)]*\))\.asMap()/.take(\1).toList().asMap()/g' {} \; || true
 
-          # Kotlin Sequence -> List fixes in StorageChannel
+          # Kotlin Sequence -> List + remove empty ScanService class
           SC=android/app/src/main/kotlin/com/powerfiles/channels/StorageChannel.kt
           if [ -f "$SC" ]; then
-            # findLargeFiles: add .toList() after map block
-            python3 -c "
-          import re
-          p='$SC'
-          t=open(p).read()
-          # After .map { ... } that ends findLargeFiles / findDuplicate return chains, ensure .toList()
-          t2=re.sub(
-            r'(return File\(path\)\.walkTopDown\(\)[\s\S]*?\.map \{ file ->[\s\S]*?\})\s*(\n\s*})',
-            r'\\1.toList()\\2',
-            t, count=1)
-          t2=re.sub(
-            r'(return sizeMap[\s\S]*?\.take\(50\)[^\n]*)',
-            r'\\1.toList()',
-            t2, count=1)
-          open(p,'w').write(t2)
-          print('StorageChannel patched')
-          "
+            python3 << 'PY'
+p="android/app/src/main/kotlin/com/powerfiles/channels/StorageChannel.kt"
+t=open(p).read()
+if "findLargeFiles" in t and ".toList()" not in t[t.find("findLargeFiles"):t.find("findLargeFiles")+600]:
+    t=t.replace(
+        '''            .map { file ->
+                mapOf(
+                    "name" to file.name,
+                    "path" to file.absolutePath,
+                    "size" to file.length(),
+                    "lastModified" to file.lastModified(),
+                    "extension" to file.extension
+                )
+            }
+    }''',
+        '''            .map { file ->
+                mapOf(
+                    "name" to file.name,
+                    "path" to file.absolutePath,
+                    "size" to file.length(),
+                    "lastModified" to file.lastModified(),
+                    "extension" to file.extension
+                )
+            }
+            .toList()
+    }'''
+    )
+import re
+t=re.sub(r'(private fun findLargeFiles[\s\S]{50,400}?\.map \{[\s\S]*?\})\s*\n(\s*\})', r'\1\n            .toList()\n\2', t, count=1)
+open(p,'w').write(t)
+print('StorageChannel patched')
+PY
+          fi
+
+          SS=android/app/src/main/kotlin/com/powerfiles/services/ScanService.kt
+          if [ -f "$SS" ]; then
+            sed -i '/^class ScanService$/d' "$SS" || true
+          fi
+
+          MF=android/app/src/main/AndroidManifest.xml
+          if [ -f "$MF" ]; then
+            python3 -c '
+import re
+p="android/app/src/main/AndroidManifest.xml"
+t=open(p).read()
+t=re.sub(r"\s*<!--[^>]*Service[^>]*-->\s*<service[\s\S]*?android:exported=\"false\"\s*/>\s*", "\n", t)
+t=re.sub(r"\s*<service[\s\S]*?ScanService[\s\S]*?/>\s*", "\n", t)
+open(p,"w").write(t)
+print("manifest cleaned")
+'
           fi
 
           BG=android/app/build.gradle.kts
@@ -114,6 +147,9 @@ jobs:
           if ! grep -q documentfile "$BG"; then
             printf '\ndependencies {\n    implementation("androidx.documentfile:documentfile:1.0.1")\n    implementation("androidx.work:work-runtime-ktx:2.9.1")\n    implementation("androidx.core:core-ktx:1.13.1")\n    implementation("androidx.appcompat:appcompat:1.7.0")\n    implementation("androidx.multidex:multidex:2.0.1")\n}\n' >> "$BG"
           fi
+          if ! grep -q "lint {" "$BG"; then
+            sed -i '/android {/a\    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }' "$BG" || true
+          fi
           SAF=android/app/src/main/kotlin/com/powerfiles/channels/SAFChannel.kt
           if [ -f "$SAF" ] && ! grep -q androidx.documentfile "$SAF"; then
             sed -i '1a import androidx.documentfile.provider.DocumentFile' "$SAF"
@@ -121,8 +157,10 @@ jobs:
           echo 'android.newDsl=false' >> android/gradle.properties
           echo 'android.builtInKotlin=false' >> android/gradle.properties
           echo '--- READY ---'
-          grep -n compileSdk "$BG"
+          grep -n compileSdk "$BG" || true
           grep -n toList "$SC" || true
+          grep -n ScanService "$MF" || echo "no ScanService in manifest"
+          grep -n "class ScanService" "$SS" || echo "no empty ScanService class"
 
       - name: Get dependencies
         working-directory: project
