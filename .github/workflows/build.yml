@@ -79,55 +79,54 @@ jobs:
           # Dart asMap fix
           find lib -name "*.dart" -exec sed -i 's/\.take(\([^)]*\))\.asMap()/.take(\1).toList().asMap()/g' {} \; || true
 
-          # Kotlin Sequence -> List + remove empty ScanService class
+          # Kotlin toList fix
           SC=android/app/src/main/kotlin/com/powerfiles/channels/StorageChannel.kt
           if [ -f "$SC" ]; then
-            python3 << 'PY'
-p="android/app/src/main/kotlin/com/powerfiles/channels/StorageChannel.kt"
+            python3 -c "
+p='$SC'
 t=open(p).read()
-if "findLargeFiles" in t and ".toList()" not in t[t.find("findLargeFiles"):t.find("findLargeFiles")+600]:
+if '.toList()' not in t[t.find('findLargeFiles'):t.find('findLargeFiles')+600]:
     t=t.replace(
-        '''            .map { file ->
+'''            .map { file ->
                 mapOf(
-                    "name" to file.name,
-                    "path" to file.absolutePath,
-                    "size" to file.length(),
-                    "lastModified" to file.lastModified(),
-                    "extension" to file.extension
+                    \"name\" to file.name,
+                    \"path\" to file.absolutePath,
+                    \"size\" to file.length(),
+                    \"lastModified\" to file.lastModified(),
+                    \"extension\" to file.extension
                 )
             }
     }''',
-        '''            .map { file ->
+'''            .map { file ->
                 mapOf(
-                    "name" to file.name,
-                    "path" to file.absolutePath,
-                    "size" to file.length(),
-                    "lastModified" to file.lastModified(),
-                    "extension" to file.extension
+                    \"name\" to file.name,
+                    \"path\" to file.absolutePath,
+                    \"size\" to file.length(),
+                    \"lastModified\" to file.lastModified(),
+                    \"extension\" to file.extension
                 )
             }
             .toList()
-    }'''
-    )
-import re
-t=re.sub(r'(private fun findLargeFiles[\s\S]{50,400}?\.map \{[\s\S]*?\})\s*\n(\s*\})', r'\1\n            .toList()\n\2', t, count=1)
+    }''')
 open(p,'w').write(t)
-print('StorageChannel patched')
-PY
+print('StorageChannel ok')
+"
           fi
 
+          # Remove empty ScanService class
           SS=android/app/src/main/kotlin/com/powerfiles/services/ScanService.kt
           if [ -f "$SS" ]; then
             sed -i '/^class ScanService$/d' "$SS" || true
           fi
 
+          # Remove ScanService from manifest
           MF=android/app/src/main/AndroidManifest.xml
           if [ -f "$MF" ]; then
             python3 -c '
 import re
 p="android/app/src/main/AndroidManifest.xml"
 t=open(p).read()
-t=re.sub(r"\s*<!--[^>]*Service[^>]*-->\s*<service[\s\S]*?android:exported=\"false\"\s*/>\s*", "\n", t)
+t=re.sub(r"\s*<!--[^>]*[Ss]ervice[^>]*-->\s*<service[\s\S]*?ScanService[\s\S]*?/>\s*", "\n", t)
 t=re.sub(r"\s*<service[\s\S]*?ScanService[\s\S]*?/>\s*", "\n", t)
 open(p,"w").write(t)
 print("manifest cleaned")
@@ -147,7 +146,7 @@ print("manifest cleaned")
           if ! grep -q documentfile "$BG"; then
             printf '\ndependencies {\n    implementation("androidx.documentfile:documentfile:1.0.1")\n    implementation("androidx.work:work-runtime-ktx:2.9.1")\n    implementation("androidx.core:core-ktx:1.13.1")\n    implementation("androidx.appcompat:appcompat:1.7.0")\n    implementation("androidx.multidex:multidex:2.0.1")\n}\n' >> "$BG"
           fi
-          if ! grep -q "lint {" "$BG"; then
+          if ! grep -q "checkReleaseBuilds" "$BG"; then
             sed -i '/android {/a\    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }' "$BG" || true
           fi
           SAF=android/app/src/main/kotlin/com/powerfiles/channels/SAFChannel.kt
@@ -160,7 +159,6 @@ print("manifest cleaned")
           grep -n compileSdk "$BG" || true
           grep -n toList "$SC" || true
           grep -n ScanService "$MF" || echo "no ScanService in manifest"
-          grep -n "class ScanService" "$SS" || echo "no empty ScanService class"
 
       - name: Get dependencies
         working-directory: project
