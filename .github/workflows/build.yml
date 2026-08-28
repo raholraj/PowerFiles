@@ -31,7 +31,7 @@ jobs:
           i=data.find(b'PK\\x03\\x04')
           if i<0: i=data.find(b'PK')
           open('src.zip','wb').write(data[i:] if i>=0 else data)
-          print('zip ok, stripped', max(i,0), 'bytes')
+          print('zip ok')
           "
           mkdir -p project
           unzip -o src.zip -d project || true
@@ -42,7 +42,6 @@ jobs:
           test -f project/pubspec.yaml
           cd project
 
-          # Fix pubspec BEFORE flutter create (create runs pub get)
           sed -i 's/permission_handler: \^[0-9.]*/permission_handler: ^12.0.0/' pubspec.yaml
           if ! grep -q dependency_overrides pubspec.yaml; then
             printf '\ndependency_overrides:\n  path: ^1.9.1\n  permission_handler: ^12.0.0\n' >> pubspec.yaml
@@ -77,9 +76,34 @@ jobs:
             cp /tmp/pf_backup/app_build.gradle.kts android/app/build.gradle.kts
           fi
 
+          # Dart asMap fix
           sed -i 's/large\.take(n)\.asMap()/large.take(n).toList().asMap()/g' lib/features/telegram_bot/telegram_settings_screen.dart || true
 
+          # Kotlin Sequence -> List fixes in StorageChannel
+          SC=android/app/src/main/kotlin/com/powerfiles/channels/StorageChannel.kt
+          if [ -f "$SC" ]; then
+            # findLargeFiles: add .toList() after map block
+            python3 -c "
+          import re
+          p='$SC'
+          t=open(p).read()
+          # After .map { ... } that ends findLargeFiles / findDuplicate return chains, ensure .toList()
+          t2=re.sub(
+            r'(return File\(path\)\.walkTopDown\(\)[\s\S]*?\.map \{ file ->[\s\S]*?\})\s*(\n\s*})',
+            r'\\1.toList()\\2',
+            t, count=1)
+          t2=re.sub(
+            r'(return sizeMap[\s\S]*?\.take\(50\)[^\n]*)',
+            r'\\1.toList()',
+            t2, count=1)
+          open(p,'w').write(t2)
+          print('StorageChannel patched')
+          "
+          fi
+
           BG=android/app/build.gradle.kts
+          sed -i 's/compileSdk = [0-9]*/compileSdk = 35/' "$BG" || true
+          sed -i 's/targetSdk = [0-9]*/targetSdk = 35/' "$BG" || true
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' "$BG" || true
           sed -i 's/minSdk = [0-9]*/minSdk = 26/' "$BG" || true
           if grep -q ndkVersion "$BG"; then
@@ -96,11 +120,9 @@ jobs:
           fi
           echo 'android.newDsl=false' >> android/gradle.properties
           echo 'android.builtInKotlin=false' >> android/gradle.properties
-          echo '--- pubspec deps ---'
-          grep -A2 permission_handler pubspec.yaml || true
-          grep -A5 dependency_overrides pubspec.yaml || true
           echo '--- READY ---'
-          ls -la android/app/debug.keystore lib/main.dart
+          grep -n compileSdk "$BG"
+          grep -n toList "$SC" || true
 
       - name: Get dependencies
         working-directory: project
